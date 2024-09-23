@@ -105,10 +105,8 @@ def ejecutar_opcion(opcion):
         resolver_simplex()  # Ejecuta el método Simplex cuando elige la opción 1
     elif opcion == "2":
         print("Has elegido el metodo de las 2 fases.")
-        # Aquí puedes llamar a la función correspondiente para el método de las 2 fases cuando esté implementada.
     elif opcion == "3":
         print("Has elegido el metodo M grande.")
-        # Aquí puedes llamar a la función correspondiente para el método M grande cuando esté implementada.
     elif opcion == "4":
         print("Saliendo del programa...")
     else:
