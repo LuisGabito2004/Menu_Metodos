@@ -145,7 +145,7 @@ class SimplexApp:
             opt_menu.grid(row=0, column=1, padx=10, pady=1)
 
             # Crear campos para los coeficientes de la función objetivo
-            tk.Label(self.constraints_frame, text="Función Objetivo:", font=("Arial", 12), bg="#f0f0f0").grid(row=1, column=0, sticky="e", padx=10, pady=10)
+            tk.Label(self.constraints_frame, text="Función Objetivo:", font=("Arial", 12), bg="#f0f0f0").grid(row=1, column=0, sticky="e", padx=10)
             self.coef_widgets = []
             for j in range(n):
                 coef_var = tk.StringVar()
@@ -178,6 +178,9 @@ class SimplexApp:
 
             # Añadir la condición de no negatividad
             tk.Label(self.constraints_frame, text="X1, X2 ≥ 0", font=("Arial", 12), bg="#f0f0f0").grid(row=m + 2, column=0, columnspan=n + 3, sticky="w", padx=10, pady=10)
+
+            # Botón para regresar a la vista anterior (create_widgets)
+            tk.Button(self.constraints_frame, text="Regresar", command=self.create_widgets, font=("Arial", 12), bg="#767676", fg="white", width=20).grid(row=m + 3, column=0, columnspan=3, pady=10)
 
         except ValueError:
             messagebox.showerror("Error", "Por favor ingrese valores válidos.")
@@ -242,6 +245,7 @@ class SimplexApp:
                 
                 # Asume que los coeficientes de las variables holgura (slack_vars) son 1 y tamaño m
                 slack_vars = [1 for _ in range(m)]
+
                 # Crear el objeto del solucionador de dos fases
                 #solver = Two_Phase.LP_model_solver(vars_name, c, A, b, slack_vars, widget=self.text_widget, operators=self.operators ,is_min=True)
                 solver = Two_Phase.LP_model_solver(vars_name, c, A, b, slack_vars, operators=self.operators, widget=self.text_widget, is_min = is_min)
