@@ -9,6 +9,7 @@ class SimplexApp:
         self.root = root
         self.root.title("Métodos de Programación Lineal")
         self.root.configure(bg="#f0f0f0")  # Fondo claro para la ventana
+        self.operators = []
 
         # Variables para los inputs del Simplex
         self.entry_vars = {
@@ -18,6 +19,7 @@ class SimplexApp:
         }
         self.restricciones_entries = []
         self.method = tk.StringVar(value="Simplex")  # Método predeterminado
+        self.opt_type = tk.StringVar(value="Maximizar")  # Variable para el tipo de optimización (Maximizar/Minimizar)
 
         # Mostrar la primera vista de selección de método
         self.show_method_selector()
@@ -82,15 +84,21 @@ class SimplexApp:
         self.two_phase_button = tk.Button(frame, text="Método de Dos Fases", font=("Arial", 12), bg="#2196F3", fg="white", width=20, command=lambda: self.select_method("Two Phase"))
         self.two_phase_button.grid(row=1, column=2, padx=5, pady=5)
 
-        # Mostrar los campos de entrada
-        tk.Label(frame, text="Número de variables:", font=("Arial", 12), bg="#f0f0f0").grid(row=2, column=0, sticky="e", padx=10)
-        tk.Entry(frame, textvariable=self.entry_vars["n"], font=("Arial", 12), width=10).grid(row=2, column=1, padx=10)
+        # Menú desplegable para seleccionar Maximizar o Minimizar
+        tk.Label(frame, text="Tipo de optimización:", font=("Arial", 12), bg="#f0f0f0").grid(row=2, column=0, sticky="e", padx=10)
+        opt_menu = tk.OptionMenu(frame, self.opt_type, "Maximizar", "Minimizar")
+        opt_menu.config(font=("Arial", 12))
+        opt_menu.grid(row=2, column=1, padx=10, pady=1)
 
-        tk.Label(frame, text="Número de restricciones:", font=("Arial", 12), bg="#f0f0f0").grid(row=3, column=0, sticky="e", padx=10)
-        tk.Entry(frame, textvariable=self.entry_vars["m"], font=("Arial", 12), width=10).grid(row=3, column=1, padx=10)
+        # Mostrar los campos de entrada
+        tk.Label(frame, text="Número de variables:", font=("Arial", 12), bg="#f0f0f0").grid(row=3, column=0, sticky="e", padx=10, pady=1)
+        tk.Entry(frame, textvariable=self.entry_vars["n"], font=("Arial", 12), width=10).grid(row=3, column=1, padx=10)
+
+        tk.Label(frame, text="Número de restricciones:", font=("Arial", 12), bg="#f0f0f0").grid(row=4, column=0, sticky="e", padx=10, pady=1)
+        tk.Entry(frame, textvariable=self.entry_vars["m"], font=("Arial", 12), width=10).grid(row=4, column=1, padx=10)
 
         # Botón para generar campos de la función y las restricciones
-        tk.Button(frame, text="Generar campos de las coeficientes", command=self.crear_campos_restricciones, font=("Arial", 12, "bold"), bg="#4caf50", fg="white", width=30).grid(row=4, column=0, columnspan=2, pady=10)
+        tk.Button(frame, text="Generar campos de las coeficientes", command=self.crear_campos_restricciones, font=("Arial", 12, "bold"), bg="#4caf50", fg="white", width=30).grid(row=5, column=0, columnspan=2, pady=10)
 
         # Widget de texto para mostrar resultados
         self.text_widget = tk.Text(self.root, height=15, width=70, font=("Arial", 12))
@@ -130,14 +138,20 @@ class SimplexApp:
             m = int(self.entry_vars["m"].get())
             n = int(self.entry_vars["n"].get())
 
+            # Menú desplegable para seleccionar Maximizar o Minimizar
+            tk.Label(self.constraints_frame, text="Tipo de optimización:", font=("Arial", 12), bg="#f0f0f0").grid(row=0, column=0, sticky="e", padx=10)
+            opt_menu = tk.OptionMenu(self.constraints_frame, self.opt_type, "Maximizar", "Minimizar")
+            opt_menu.config(font=("Arial", 12))
+            opt_menu.grid(row=0, column=1, padx=10, pady=1)
+
             # Crear campos para los coeficientes de la función objetivo
-            tk.Label(self.constraints_frame, text="Función Objetivo:", font=("Arial", 12), bg="#f0f0f0").grid(row=0, column=0, sticky="e", padx=10)
+            tk.Label(self.constraints_frame, text="Función Objetivo:", font=("Arial", 12), bg="#f0f0f0").grid(row=1, column=0, sticky="e", padx=10, pady=10)
             self.coef_widgets = []
             for j in range(n):
                 coef_var = tk.StringVar()
                 self.entry_vars["c"].append(coef_var)
                 entry = tk.Entry(self.constraints_frame, textvariable=coef_var, font=("Arial", 12), width=5)
-                entry.grid(row=0, column=j + 1, padx=5)
+                entry.grid(row=1, column=j + 1, padx=5)
                 self.coef_widgets.append(entry)
 
             for i in range(m):
@@ -145,57 +159,29 @@ class SimplexApp:
                 self.restricciones_entries.append({"b": restriccion_var_b, "A": []})
 
                 # Crear campos para los coeficientes de la restricción
-                tk.Label(self.constraints_frame, text=f"Restricción {i+1}:", font=("Arial", 12), bg="#f0f0f0").grid(row=i + 1, column=0, sticky="e", padx=10)
+                tk.Label(self.constraints_frame, text=f"Restricción {i+1}:", font=("Arial", 12), bg="#f0f0f0").grid(row=i + 2, column=0, sticky="e", padx=10, pady=1)
 
                 for j in range(n):
                     coef_var = tk.StringVar()
                     self.restricciones_entries[i]["A"].append(coef_var)
-                    tk.Entry(self.constraints_frame, textvariable=coef_var, font=("Arial", 12), width=5).grid(row=i + 1, column=j + 1, padx=5)
+                    tk.Entry(self.constraints_frame, textvariable=coef_var, font=("Arial", 12), width=5).grid(row=i + 2, column=j + 1, padx=5)
 
-                # Etiqueta para el lado derecho de la restricción
                 # Crear una variable para almacenar el valor seleccionado
-                self.operator_var = tk.StringVar(self.constraints_frame)
-                self.operator_var.set("≤")  # Valor por defecto
-
-                # Crear el OptionMenu
-                operator_menu = tk.OptionMenu(self.constraints_frame, self.operator_var, "≤", "≥", "=")
+                operator_var = tk.StringVar(self.constraints_frame)
+                operator_var.set("≤")  # Default value
+                operator_menu = tk.OptionMenu(self.constraints_frame, operator_var, "≤", "≥", "=")
                 operator_menu.config(font=("Arial", 12), bg="#f0f0f0")
+                operator_menu.grid(row=i + 2, column=n + 1, sticky="e", padx=10)
+                self.operators.append(operator_var)
 
-                # Colocar el OptionMenu en la posición deseada
-                operator_menu.grid(row=i + 1, column=n + 1, sticky="e", padx=10)
-
-                tk.Entry(self.constraints_frame, textvariable=restriccion_var_b, font=("Arial", 12), width=10).grid(row=i + 1, column=n + 2, padx=10)
+                tk.Entry(self.constraints_frame, textvariable=restriccion_var_b, font=("Arial", 12), width=10).grid(row=i + 2, column=n + 2, padx=10)
 
             # Añadir la condición de no negatividad
-            tk.Label(self.constraints_frame, text="X1, X2 ≥ 0", font=("Arial", 12), bg="#f0f0f0").grid(row=m + 1, column=0, columnspan=n + 3, sticky="w", padx=10, pady=10)
+            tk.Label(self.constraints_frame, text="X1, X2 ≥ 0", font=("Arial", 12), bg="#f0f0f0").grid(row=m + 2, column=0, columnspan=n + 3, sticky="w", padx=10, pady=10)
 
         except ValueError:
             messagebox.showerror("Error", "Por favor ingrese valores válidos.")
             self.create_widgets()
-
-    def get_input():
-        # Solicitar nombres de variables
-        vars_name = input("Ingrese los nombres de las variables (separados por comas): ").split(',')
-        vars_name = [name.strip() for name in vars_name]
-        
-        # Solicitar coeficientes de costo
-        C = list(map(float, input("Ingrese los coeficientes de costo (separados por comas): ").split(',')))
-        
-        # Solicitar matriz de restricciones
-        A = []
-        num_constraints = int(input("Ingrese el número de restricciones: "))
-        for i in range(num_constraints):
-            row = list(map(float, input(f"Ingrese los coeficientes de la restricción {i+1} (separados por comas): ").split(',')))
-            A.append(row)
-
-        # Solicitar RHS
-        RHS = list(map(float, input("Ingrese los valores del lado derecho de las restricciones (separados por comas): ").split(',')))
-        
-        # Solicitar valores de las variables de holgura
-        slack_vars = list(map(float, input("Ingrese los coeficientes de las variables de holgura (separados por comas): ").split(',')))
-
-        # Devolver los datos obtenidos
-        return vars_name, C, A, RHS, slack_vars
 
     def display_results(result):
         print("Resultados de la optimización:")
@@ -209,16 +195,6 @@ class SimplexApp:
             print("El problema es ilimitado.")
             print("Cono de recesión:", result['Recession Cone'])
 
-    def main(self):
-        print("Bienvenido al solucionador de problemas de programación lineal.")
-        vars_name, C, A, RHS, slack_vars = self.get_input()
-        
-        # Inicializar el modelo de LP
-        lp_model = LP_model_solver(vars_name, C, A, RHS, slack_vars, is_min=False)
-        result = lp_model.optimize()
-
-        # Mostrar resultado
-        self.display_results(result)
 
     def resolver(self):
         """Resuelve el problema con el método seleccionado"""
@@ -255,13 +231,24 @@ class SimplexApp:
                 solver.solve_with_big_m(self.text_widget)
             elif method == "Two Phase":
                 self.text_widget.insert(tk.END, "Resolviendo con Método de Dos Fases...\n")
+
+                if self.opt_type.get() == "Maximizar":
+                    is_min = False
+                else:
+                    is_min = True
                 
-                # Crear el objeto de TwoPhaseSolver (que está en el archivo Two Phase.py)
-                solver = Two_Phase.LP_model_solver(n, c, A, b, [0]*n, is_min=False)
+                # Crear los nombres de las variables según el número de variables
+                vars_name = [f"x{i+1}" for i in range(n)]
                 
+                # Asume que los coeficientes de las variables holgura (slack_vars) son 1 y tamaño m
+                slack_vars = [1 for _ in range(m)]
+                # Crear el objeto del solucionador de dos fases
+                #solver = Two_Phase.LP_model_solver(vars_name, c, A, b, slack_vars, widget=self.text_widget, operators=self.operators ,is_min=True)
+                solver = Two_Phase.LP_model_solver(vars_name, c, A, b, slack_vars, operators=self.operators, widget=self.text_widget, is_min = is_min)
+
                 # Llamar al método para resolver en dos fases
                 result = solver.optimize()
-                
+
                 # Mostrar el resultado en el text_widget
                 if result['Type'] == 'optimal':
                     self.text_widget.insert(tk.END, "Solución óptima encontrada:\n")
@@ -272,10 +259,9 @@ class SimplexApp:
                 elif result['Type'] == 'unbounded':
                     self.text_widget.insert(tk.END, "El problema es ilimitado.\n")
                     self.text_widget.insert(tk.END, f"Cono de recesión: {result['Recession Cone']}\n")
-                else:
-                    self.text_widget.insert(tk.END, "El problema no tiene solución factible.\n")
             else:
-                messagebox.showerror("Error", "Método no soportado.")
+                self.text_widget.insert(tk.END, "El problema no tiene solución factible.\n")
+
         except ValueError as ve:
             messagebox.showerror("Error", f"Por favor ingrese valores válidos: {ve}")
         except Exception as e:
@@ -286,4 +272,3 @@ if __name__ == "__main__":
     root = tk.Tk()
     app = SimplexApp(root)
     root.mainloop()
-    app.main()

@@ -1,18 +1,58 @@
 import numpy as np
 import time
+import tkinter as tk
 
 class LP_model_solver(object):
-    def __init__(self, vars_name, C, A, RHS, slack_vars, is_min):
+    def __init__(self, vars_name, C, A, RHS, slack_vars, widget, operators, is_min):
         self.vars_name = vars_name
         self.C = np.array(C).astype(np.float64)
         self.A = np.array(A).astype(np.float64)
         self.RHS = np.array(RHS).astype(np.float64)
         self.slack_vars = np.array(slack_vars).astype(np.float64)
         self.is_min = is_min
-        self._convert_to_standard_form()
         self._equal_threshold = 1e-6
+        self.text_widget = widget
+        self.operators = operators
+        self._convert_to_standard_form()
+
 
     def _convert_to_standard_form(self):
+        self.var_num = self.C.size  # total number of variables (before adding slack/surplus)
+        self.const_num = self.RHS.size  # total number of constraints
+        
+        new_A = []
+        new_C = list(self.C)
+
+        # For each constraint, add slack or surplus based on the operator
+        for i in range(self.const_num):
+            if self.operators[i].get() == "≤":
+                # Add a slack variable
+                slack_col = np.zeros(self.const_num)
+                slack_col[i] = 1.0  # Slack variable for the `i-th` constraint
+                new_A.append(np.concatenate([self.A[i], slack_col]))  # Append slack to matrix row
+                new_C.append(0.0)  # No cost associated with slack variable
+
+            elif self.operators[i].get() == "≥":
+                # Add a surplus variable
+                surplus_col = np.zeros(self.const_num)
+                surplus_col[i] = -1.0  # Surplus variable (negative coefficient)
+                new_A.append(np.concatenate([self.A[i], surplus_col]))
+                new_C.append(0.0)  # No cost associated with surplus variable
+
+            elif self.operators[i].get() == "=":
+                if i < len(self.A):
+                    # Add the equality constraint without slack or surplus
+                    print("EQUAL OPERATOR")
+                    new_A.append(np.concatenate([self.A[i], np.zeros(self.const_num)]))
+                else:
+                    print(f"Error: Trying to access index {i} in A which has length {len(self.A)}")
+
+                
+
+        # Update `self.A` and `self.C` with the extended matrix and cost vector
+        self.A = np.array(new_A).astype(np.float64)
+        self.C = np.array(new_C).astype(np.float64)
+
         ## convert the original LP to a minimization problem (if not) with standard form
         self.var_num = self.C.size + self.slack_vars.size  # total number of variables
         self.const_num = self.RHS.size # total number of constraints
@@ -50,7 +90,7 @@ class LP_model_solver(object):
         self.tableau.append(last_row)
         self.tableau = np.array(self.tableau).astype(np.float64)
 
-    def _simplex_tableau(self):
+    def _simplex_tableau(self, text_widget):  # Pass in the text widget
         assert self.const_num == len(self.basis)
         iteration = 0
         while any(self.tableau[-1][self.non_basis] > (0 + self._equal_threshold)):
@@ -58,23 +98,37 @@ class LP_model_solver(object):
             enter_axis_idx = np.argmax(reduced_cost)
             enter_axis = self.non_basis[enter_axis_idx]
             y_k = self.tableau[:-1, enter_axis]
-            if all(y_k <= (0 + self._equal_threshold)):
-                # Requirement 6: termination with unboundness
-                rc = self._get_recession_cone(enter_axis, y_k)
-                return {'Type': 'unbounded', 'Recession Cone': rc}
-            # Requirement 5: one rule to prevent the simplex method from cycling
-            leave_axis_idx = self._lexicographic_rule(y_k)
-            self._update_tableau(enter_axis_idx, leave_axis_idx) # pivoting
-            cur_sol, cur_obj = self._get_result()
-            print("Iteration #{}:".format(iteration))
-            print("The current objective is {}.".format(cur_obj))
-            print("The current solution (basic variable: value) is {}.".format(cur_sol))
-            iteration += 1
-        # Requirement 6: termination with finite optimal solution
-        optimal_solution, optimal_obj = self._get_result()
 
-        return {'Type': 'optimal', 'Optimal Solution': optimal_solution,
-                'Optimal Objective': optimal_obj}
+            if all(y_k <= (0 + self._equal_threshold)):
+                rc = self._get_recession_cone(enter_axis, y_k)
+                text_widget.insert(tk.END, "Solution is unbounded\n")
+                return {'Type': 'unbounded', 'Recession Cone': rc}
+            
+            leave_axis_idx = self._lexicographic_rule(y_k)
+            self._update_tableau(enter_axis_idx, leave_axis_idx)  # Perform pivot
+            
+            cur_sol, cur_obj = self._get_result()
+            
+            # Display each iteration in the Text widget
+            self.text_widget.insert(tk.END, f"\n=== Iteration #{iteration} ===\n")
+            self.text_widget.insert(tk.END, f"Entering variable: x{enter_axis + 1}\n")
+            self.text_widget.insert(tk.END, f"Leaving variable: x{self.basis[leave_axis_idx] + 1}\n")
+            self.text_widget.insert(tk.END, f"Current objective value: {cur_obj:.4f}\n")
+            self.text_widget.insert(tk.END, "Current basic solution:\n")
+            for var, value in cur_sol.items():
+                self.text_widget.insert(tk.END, f"x{var + 1}: {value:.4f}\n")
+            
+            iteration += 1
+
+        optimal_solution, optimal_obj = self._get_result()
+        text_widget.insert(tk.END, f"\nOptimal solution found after {iteration} iterations:\n")
+        text_widget.insert(tk.END, f"Optimal Objective Value: {optimal_obj:.4f}\n")
+        text_widget.insert(tk.END, "Optimal solution (variable: value):\n")
+        for var, value in optimal_solution.items():
+            text_widget.insert(tk.END, f"x{var + 1}: {value:.4f}\n")
+
+        return {'Type': 'optimal', 'Optimal Solution': optimal_solution, 'Optimal Objective': optimal_obj}
+
 
     def _get_result(self):
         current_solution = {}
@@ -228,60 +282,31 @@ class LP_model_solver(object):
     # main function: linear optimization with two-phase simplex tableau method
     def optimize(self):
         start_time = time.time()
-        ## phase 1
-        # create initial tableau for phase 1
-        print("Phase 1 starts!")
+
+        ## phase 1        
+        print("Inicia Fase 1\n")
         self._create_init_phase_1_tableau()
-        phase_1_result = self._simplex_tableau()
+        phase_1_result = self._simplex_tableau(self.text_widget)
         assert phase_1_result['Type'] == 'optimal'
-        # print(phase_1_result)
-        # Requirement 1: to detect if the LP at hand is feasible or not
-        # if phase_1_result['Optimal Objective'] != 0:
+
         if abs(phase_1_result['Optimal Objective']) > self._equal_threshold:
-            print("The original LP is infeasible!")
+            return {'Type': 'infeasible'}
         else:
-            print("Phase 2 starts!")
+            print("Inicia Fase 2\n")
             self._convert_tableau_to_Phase_2()
-            phase_2_result = self._simplex_tableau()
-            # Requirement 6: handle two termination conditions
+            phase_2_result = self._simplex_tableau(self.text_widget)
+
             if phase_2_result['Type'] == 'optimal':
-                print("There is a finite optimal solution for this LP problem!")
-                print("Optimal objective: {}.".format(phase_2_result['Optimal Objective']))
-                print("The optimal solutions are: ")
-                for v in range(len(self.vars_name)):
-                    if v in phase_2_result['Optimal Solution'].keys():
-                        print("{}: {}".format(self.vars_name[v], \
-                                              phase_2_result['Optimal Solution'][v]))
-                    else:
-                        print("{}: {}".format(self.vars_name[v], 0.0))
+                print("Optimo") 
+                return {
+                    'Type': 'optimal',
+                    'Optimal Solution': {self.vars_name[v]: phase_2_result['Optimal Solution'][v] if v in phase_2_result['Optimal Solution'] else 0.0 for v in range(len(self.vars_name))},
+                    'Optimal Objective': phase_2_result['Optimal Objective']
+                }
             else:
+                print("Unbounded")
                 assert phase_2_result['Type'] == 'unbounded'
-                print("The LP problem is unbounded!")
-                print("The recession cone for this solution is {}.".format(\
-                    phase_2_result['Recession Cone']))
-
-        end_time = time.time()
-        print("The total time cost for this task is {}s.".format(end_time - start_time))
-
-# if __name__ == '__main__':
-#     ## Model 13
-#     vars_name = []
-#     for i in range(4):
-#         for j in range(4):
-#             vars_name.append('x_{}_{}'.format(i+1, j+1))
-#     C = [16, 12, 20, 18, 14, 13, 24, 20, 17, 10, 28, 20, 12, 11, 18, 17] # cost coefficient
-#     A = [[1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-#          [0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0],
-#          [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0],
-#          [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1],
-#          [17, 0, 0, 0, 15, 0, 0, 0, 13, 0, 0, 0, 10, 0, 0, 0],
-#          [0, 14, 0, 0, 0, 16, 0, 0, 0, 12, 0, 0, 0, 11, 0, 0],
-#          [0, 0, 10, 0, 0, 0, 12, 0, 0, 0, 14, 0, 0, 0, 8, 0],
-#          [0, 0, 0, 9, 0, 0, 0, 11, 0, 0, 0, 8, 0, 0, 0, 6]] # constraints matrix
-#     RHS = [1500, 1700, 900, 600, 22.5, 9, 4.8, 3.5] # right hand side of the constraints
-#     # the coefficient of the slack variables, related to the constraint type
-#     slack_vars = [1, 1, 1, 1, -1, -1, -1, -1]
-#     # initialize a LP_model with the above information
-#     # note that RHS should be non-negative
-#     lp_model = LP_model_solver(vars_name, C, A, RHS, slack_vars, is_min=False)
-#     lp_model.optimize()
+                return {
+                    'Type': 'unbounded',
+                    'Recession Cone': phase_2_result['Recession Cone']
+                }
