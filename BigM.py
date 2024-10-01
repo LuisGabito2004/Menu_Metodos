@@ -3,18 +3,17 @@ from bigmMaddition import big_m_addition
 import numpy as np
 import re
 import tkinter as tk
-from tkinter import messagebox
 
 class BigMSolver:
     def __init__(
             self,
-            num_var: int, #variable names
-            num_constr: int, #restrictions count
-            coefs_objective: List[float], #objetive funcion
-            coefs_constr: List[List[float]], #coefficient list
+            num_var: int,
+            num_constr: int,
+            coefs_objective: List[str],
+            coefs_constr: List[List[float]],
             op_constr,
-            res_constr: List[float], #restriction results
-            is_min: bool = False # minimize
+            res_constr: List[float],
+            is_min: bool = False
         ):
         self.num_var = num_var
         self.num_restr = num_constr
@@ -36,40 +35,60 @@ class BigMSolver:
 
         self.tableau = self.create_initial_tableau()
 
+    def format_tableau_for_display(self, tableau):
+        formatted_tableau = np.zeros_like(tableau, dtype=object)
+        
+        for i in range(tableau.shape[0]):
+            for j in range(tableau.shape[1]):
+                value = tableau[i, j]
+                if abs(value) >= self.M:
+                    m_coeff = value // self.M
+                    const_part = value % self.M
+                    if const_part == 0:
+                        formatted_tableau[i, j] = f"{m_coeff}M"
+                    else:
+                        sign = "+" if const_part > 0 else "-"
+                        formatted_tableau[i, j] = f"{m_coeff}M{sign}{abs(const_part)}"
+                else:
+                    formatted_tableau[i, j] = f"{value:.2f}"
+        
+        return formatted_tableau
+
     def create_initial_tableau(self):
         rows = self.num_restr + 1
         cols = self.total_vars + 1  # +1 for RHS
 
         tableau = np.zeros((rows, cols))
 
-        # Set objective function coefficients
-        for i in range(self.num_var):
-            tableau[0, i] = -self.coef_objective[i]
-
         # Set constraint coefficients and RHS
         for i in range(self.num_restr):
-            for j in range(self.num_var):
-                tableau[i+1, j] = self.coef_restr[i][j]
-            tableau[i+1, -1] = self.res_restr[i]
+            for j in range(len(self.coef_restr[i])):
+                tableau[i, j] = self.coef_restr[i][j]
+            tableau[i, -1] = self.res_restr[i]
 
-        # Add slack and artificial variables
-        slack_art_col = self.num_var
-        for i in range(self.num_restr):
-            if self.op_constr[i] == '<=':
-                tableau[i+1, slack_art_col] = 1
-                slack_art_col += 1
-            elif self.op_constr[i] == '>=':
-                tableau[i+1, slack_art_col] = -1
-                slack_art_col += 1
-                tableau[i+1, slack_art_col] = 1
-                tableau[0, slack_art_col] = -self.M
-                slack_art_col += 1
-            elif self.op_constr[i] == '=':
-                tableau[i+1, slack_art_col] = 1
-                tableau[0, slack_art_col] = -self.M
-                slack_art_col += 1
+        # Set objective function coefficients
+        for j in range(len(self.coef_objective) - 1):  # Exclude the last element (RHS)
+            m_coef, const_coef = self.parse_coefficient(self.coef_objective[j])
+            tableau[-1, j] = m_coef * self.M + const_coef
+
+        # Set the RHS of the objective row
+        m_coef, const_coef = self.parse_coefficient(self.coef_objective[-1])
+        tableau[-1, -1] = -(m_coef * self.M + const_coef)
 
         return tableau
+
+    def parse_coefficient(self, coef_str):
+        if isinstance(coef_str, (int, float)):
+            return 0, float(coef_str)
+        parts = coef_str.split('M')
+        if len(parts) > 1:
+            m_coef = float(parts[0]) if parts[0] else 1
+            const_part = parts[1].strip('+')
+            const_coef = float(const_part) if const_part else 0
+        else:
+            m_coef = 0
+            const_coef = float(coef_str)
+        return m_coef, const_coef
 
     def solve(self, text_widget):
         iteration = 0
@@ -77,13 +96,18 @@ class BigMSolver:
             self.print_tableau(text_widget, iteration)
 
             # Find the pivot column
-            pivot_col = np.argmin(self.tableau[0, :-1])
-            if self.tableau[0, pivot_col] >= 0:
+            pivot_col = np.argmin(self.tableau[-1, :-1])
+            if self.tableau[-1, pivot_col] >= -1e-10:  # Use a small tolerance for floating-point comparisons
                 break  # Optimal solution reached
 
             # Find the pivot row
-            ratios = self.tableau[1:, -1] / self.tableau[1:, pivot_col]
-            pivot_row = np.argmin(ratios[ratios > 0]) + 1
+            ratios = np.where(self.tableau[:-1, pivot_col] > 0,
+                            self.tableau[:-1, -1] / self.tableau[:-1, pivot_col],
+                            np.inf)
+            if np.all(np.isinf(ratios)):
+                text_widget.insert(tk.END, "The problem is unbounded.\n")
+                return None, None
+            pivot_row = np.argmin(ratios)
 
             # Perform pivot operation
             pivot_element = self.tableau[pivot_row, pivot_col]
@@ -100,26 +124,64 @@ class BigMSolver:
         # Extract and return the solution
         solution = [0] * self.num_var
         for i in range(self.num_var):
-            col = self.tableau[:, i]
+            col = self.tableau[:-1, i]
             if np.count_nonzero(col) == 1:
                 row = np.nonzero(col)[0][0]
-                if row != 0:
-                    solution[i] = self.tableau[row, -1]
+                solution[i] = self.tableau[row, -1]
 
-        objective_value = -self.tableau[0, -1] if not self.is_min else self.tableau[0, -1]
+        objective_value = self.tableau[-1, -1]
+        if self.is_min:
+            objective_value = -objective_value  # Negate for minimization problems
+
         return solution, objective_value
 
     def print_tableau(self, text_widget, iteration, is_final=False):
         text_widget.insert(tk.END, f"{'Final ' if is_final else ''}Tableau - Iteration {iteration}:\n")
         headers = [f"x{i+1}" for i in range(self.num_var)] + \
-                  [f"s{i+1}" for i in range(self.slack_vars)] + \
-                  [f"a{i+1}" for i in range(self.artificial_vars)] + ["RHS"]
+                    [f"s{i+1}" for i in range(self.slack_vars + self.artificial_vars)] + ["RHS"]
         text_widget.insert(tk.END, "\t".join(headers) + "\n")
 
         for row in self.tableau:
             text_widget.insert(tk.END, "\t".join(f"{x:.2f}" for x in row) + "\n")
         text_widget.insert(tk.END, "\n")
 
+    def print_tableau_prettier(self, text_widget, iteration, is_final=False):
+        formatted_tableau = self.format_tableau_for_display(self.tableau)
+        
+        text_widget.insert(tk.END, f"{'Final ' if is_final else ''}Tableau - Iteration {iteration}:\n")
+        headers = [f"x{i+1}" for i in range(self.num_var)] + \
+                  [f"s{i+1}" for i in range(self.slack_vars + self.artificial_vars)] + ["RHS"]
+        text_widget.insert(tk.END, "\t".join(headers) + "\n")
+
+        for row in formatted_tableau:
+            text_widget.insert(tk.END, "\t".join(row) + "\n")
+        text_widget.insert(tk.END, "\n")
+
+    def generate_str(self) -> Tuple[str, List[str]]:
+        objective = "Z=" if not self.is_min else "Z = -("
+        for i in range(self.num_var):
+            coef = self.coef_objective[i]
+            if coef >= 0 and i != 0:
+                objective += f"+ {coef}X{i+1} "
+            else:
+                objective += f" {coef}X{i+1} "
+        if self.is_min:
+            objective += ")"
+
+        constraints = []
+        for i in range(self.num_restr):
+            constraint = ""
+            for j in range(self.num_var):
+                coef = self.coef_restr[i][j]
+                if coef >= 0 and j != 0:
+                    constraint += f"+ {coef}X{j+1} "
+                else:
+                    constraint += f"{coef}X{j+1} "
+            # Append the right-hand side
+            constraint += f"{self.op_constr[i]} {self.res_restr[i]}"
+            constraints.append(constraint)
+
+        return objective, constraints
 
     def transform_big_m_objective(self, expression: str) -> List[str]:
         # Step 1: Separate the X terms
@@ -146,8 +208,8 @@ class BigMSolver:
         for key in term_order:
             group = grouped_terms[key]
             if group:
-                m_sum = sum(float(re.search(r'([+-]?\s*\d*\.?\d*)M', term).group(1) or '1') for term in group if 'M' in term)
-                non_m_sum = sum(float(re.search(r'([+-]?\s*\d*\.?\d*)', term).group(1) or '1') for term in group if 'M' not in term)
+                m_sum = sum(float(re.search(r'([+-]?\s*\d*\.?\d*)M', term.replace(" ","")).group(1) or '1') for term in group if 'M' in term)
+                non_m_sum = sum(float(re.search(r'([+-]?\s*\d*\.?\d*)', term.replace(" ","")).group(1) or '1') for term in group if 'M' not in term)
                 
                 if 'X' in group[0]:
                     result = f"{m_sum}M{'+' if non_m_sum >= 0 else ''}{non_m_sum}"
@@ -157,31 +219,6 @@ class BigMSolver:
                 result_step2.append(result)
         
         return result_step2
-
-    def generate_str(self) -> Tuple[str, List[str]]:
-        objective = "Z="
-        for i in range(self.num_var):
-            coef = self.coef_objective[i]
-            if coef >= 0 and i != 0:
-                objective += f"+ {coef}X{i+1} "
-            else:
-                objective += f" {coef}X{i+1} "
-                
-        constraints = []
-        for i in range(self.num_restr):
-            constraint = ""
-            for j in range(self.num_var):
-                coef = self.coef_restr[i][j]
-                if coef >= 0 and j != 0:
-                    constraint += f"+ {coef}X{j+1} "
-                else:
-                    constraint += f"{coef}X{j+1} "
-            # Append the right-hand side
-            constraint += f"{self.op_constr[i]} {self.res_restr[i]}"
-            constraints.append(constraint)
-
-        # Combine the objective and constraints into standard form
-        return objective, constraints
 
     def canonical2standard(self, coef: str, constrs: List[str]) -> Tuple[str, List[str]]:
         # Process constraints
@@ -289,8 +326,8 @@ class BigMSolver:
 
 # FORMATO CANONICO
 # Z = 3X1 + 5X2  
-# X1 ≤ 4
-# 2X2 ≤ 12
+# X1 + 0X2 ≤ 4
+# 0X1 + 2X2 ≤ 12
 # 3X1 + 2X2 = 18
 
 if __name__ == "__main__":
@@ -307,32 +344,11 @@ if __name__ == "__main__":
     result = big_m_addition(new_coef, new_constrs)
     objective, constraints, results_constraints = obj.parse_problem(result, new_constrs)
 
+# ['-3.0M-3.0', '-2.0M-5.0', '-18.0M']
+# [[1.0, 0.0, 1.0, 0.0, 0.0], [0.0, 2.0, 0.0, 1.0, 0.0], [3.0, 2.0, 0.0, 0.0, 1.0]]
+# [4.0, 12.0, 18.0]
 
-# I am creating a big M method solver my breakpoints are:
-# 1. Get the inputs, i end up with this
-#     var_num = 2
-#     constr_num = 3
-#     coef = [3.0, 5.0]
-#     constr = [[1.0, 1.0], [2.0, 1.0], [3.0, 2.0]]
-#     op_constr = ['<=', '<=', '=']
-#     res_constr = [4.0, 12.0, 18.0]
-# 2. Instance the bigmclass and convert it to a more readable string, separating the objective and constraints
-#     'Z= 3.0X1 + 5.0X2'
-#     ['1.0X1 + 1.0X2 <= 4.0', '2.0X1 + 1.0X2 <= 12.0', '3.0X1 + 2.0X2 = 18.0']
-# 3. transform from canonical to standart
-#     'Z = 3.0X1 + 5.0X2 - MS3'
-#     ['1.0X1 + 1.0X2 + S1 =  4.0', '2.0X1 + 1.0X2 + S2 =  12.0', '3.0X1 + 2.0X2 + MS3 =  18.0']
-# 4. Make the main Polynomial addition to create the new objective function
-#     '−3MX1−2MX2−MS3=−18M'
-# 5. Parsed again the entire result to end with the structure i beggined with
-#     ['3.0M+3.0', '2.0M+5.0', '-18.0M']
-#     [[1.0, 1.0, 1.0, 0.0, 0.0], [2.0, 1.0, 0.0, 1.0, 0.0], [3.0, 2.0, 0.0, 0.0, 1.0]]
-#     [4.0, 12.0, 18.0]
-# this is how i would like to print the table to show the user the progress with tkinter
-# def print_tabla(self, tabla, text_widget, iteracion):
-#     text_widget.insert(tk.END, f"Tabla Simplex - Iteración {iteracion}:\n")
-#     for fila in tabla:
-#         text_widget.insert(tk.END, "\t".join(map("{:.2f}".format, fila)) + "\n")
-#     text_widget.insert(tk.END, "\n")
-# implement the solver function andhif needed the adjustment on `print_tabla`, i attach the class i have,
-# the constructur have the breakpoints i talked to you
+
+
+
+

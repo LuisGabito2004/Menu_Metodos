@@ -14,7 +14,7 @@ def big_m_addition(objective: str, constraints: List[str]) -> str:
     consolidated = consolidate_terms(all_terms)
 
     # Format the result
-    result = destandardize_objective_function(format_equation(consolidated))
+    result = format_equation(consolidated)
     
     return result
 

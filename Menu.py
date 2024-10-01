@@ -2,7 +2,9 @@ import tkinter as tk
 from tkinter import messagebox
 import Simplex
 import Two_Phase
+from bigm import BigMSolver
 from Two_Phase import LP_model_solver
+import traceback
 
 class SimplexApp:
     def __init__(self, root):
@@ -23,6 +25,16 @@ class SimplexApp:
 
         # Mostrar la primera vista de selección de método
         self.show_method_selector()
+
+    def show_error(self, msg: str):
+        # Capture the traceback details
+        error_details = traceback.format_exc()
+        
+        # Combine error message with traceback info
+        messagebox.showerror(
+            "Error", 
+            f"{msg}.\n\nTraceback:\n{error_details}"
+        )
 
     def show_method_selector(self):
         """Muestra el selector de método con botones azules"""
@@ -124,7 +136,8 @@ class SimplexApp:
                 entry.grid(row=4, column=j + 1, padx=5)
                 self.coef_widgets.append(entry)
         except ValueError:
-            messagebox.showerror("Error", "Por favor ingrese un número válido de variables.")
+            self.show_error("Por favor ingrese un número válido de variables.")
+            # messagebox.showerror("Error", "Por favor ingrese un número válido de variables.")
     
     def crear_campos_restricciones(self):
         """Genera dinámicamente los campos de las restricciones y coeficientes de la función objetivo"""
@@ -183,7 +196,8 @@ class SimplexApp:
             tk.Button(self.constraints_frame, text="Regresar", command=self.create_widgets, font=("Arial", 12), bg="#767676", fg="white", width=20).grid(row=m + 3, column=0, columnspan=3, pady=10)
 
         except ValueError:
-            messagebox.showerror("Error", "Por favor ingrese valores válidos.")
+            self.show_error("Por favor ingrese valores válidos.")
+            # messagebox.showerror("Error", "Por favor ingrese valores válidos.")
             self.create_widgets()
 
     def display_results(result):
@@ -213,7 +227,9 @@ class SimplexApp:
                 return
 
             A = [list(map(float, (entry["A"][j].get() for j in range(n)))) for entry in self.restricciones_entries]
-            b = [float(entry["b"].get()) for entry in self.restricciones_entries]
+            b = [float(entry["b"].get().replace(" ","")) for entry in self.restricciones_entries]
+            o = [self.operators[i].get().replace('≤', '<=').replace('≥', '>=') for i in range(m)]
+
 
             if len(A) != m or any(len(row) != n for row in A):
                 messagebox.showerror("Error", f"Se esperaban {m} restricciones, cada una con {n} coeficientes.")
@@ -230,8 +246,9 @@ class SimplexApp:
                 solver.simplex(self.text_widget)
             elif method == "Big M":
                 self.text_widget.insert(tk.END, "Resolviendo con Método M...\n")
-                solver = Simplex.BigMSolver(n, m, c, A, b)
-                solver.solve_with_big_m(self.text_widget)
+                
+                solver = BigMSolver(n, m, c, A, o, b)
+                solver.solve(self.text_widget)
             elif method == "Two Phase":
                 self.text_widget.insert(tk.END, "Resolviendo con Método de Dos Fases...\n")
 
@@ -267,12 +284,22 @@ class SimplexApp:
                 self.text_widget.insert(tk.END, "El problema no tiene solución factible.\n")
 
         except ValueError as ve:
-            messagebox.showerror("Error", f"Por favor ingrese valores válidos: {ve}")
+            self.show_error(f"Por favor ingrese valores válidos: {ve}")
+            # messagebox.showerror("Error", f"Por favor ingrese valores válidos: {ve}")
         except Exception as e:
-            messagebox.showerror("Error", f"Ha ocurrido un error: {e}")
+            self.show_error(f"Ha ocurrido un error: {e}")
+            # messagebox.showerror("Error", f"Ha ocurrido un error: {e}")
 
 # Ejecutar la aplicación de Tkinter
 if __name__ == "__main__":
     root = tk.Tk()
     app = SimplexApp(root)
     root.mainloop()
+
+
+#     Tableau - Iteration 0:
+# x1	x2	s1	s2	a1	RHS
+# -3.00	-5.00	0.00	0.00	-1000.00	5000.00
+# 1.00	1.00	1.00	0.00	0.00	4.00
+# 2.00	1.00	0.00	1.00	0.00	12.00
+# 3.00	2.00	0.00	0.00	1.00	18.00
