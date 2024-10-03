@@ -3,7 +3,7 @@ from tkinter import messagebox
 import Simplex
 import Two_Phase
 from Two_Phase import LP_model_solver
-from BigM import BigMSolver
+from BigM.Solver import BigMSolver
 from tabulate import tabulate
 
 class SimplexApp:
@@ -293,3 +293,4 @@ if __name__ == "__main__":
     root = tk.Tk()
     app = SimplexApp(root)
     root.mainloop()
+
