@@ -2,9 +2,9 @@ import tkinter as tk
 from tkinter import messagebox
 import Simplex
 import Two_Phase
-from bigm import BigMSolver
 from Two_Phase import LP_model_solver
-import traceback
+from BigM import BigMSolver
+from tabulate import tabulate
 
 class SimplexApp:
     def __init__(self, root):
@@ -25,16 +25,6 @@ class SimplexApp:
 
         # Mostrar la primera vista de selección de método
         self.show_method_selector()
-
-    def show_error(self, msg: str):
-        # Capture the traceback details
-        error_details = traceback.format_exc()
-        
-        # Combine error message with traceback info
-        messagebox.showerror(
-            "Error", 
-            f"{msg}.\n\nTraceback:\n{error_details}"
-        )
 
     def show_method_selector(self):
         """Muestra el selector de método con botones azules"""
@@ -136,8 +126,7 @@ class SimplexApp:
                 entry.grid(row=4, column=j + 1, padx=5)
                 self.coef_widgets.append(entry)
         except ValueError:
-            self.show_error("Por favor ingrese un número válido de variables.")
-            # messagebox.showerror("Error", "Por favor ingrese un número válido de variables.")
+            messagebox.showerror("Error", "Por favor ingrese un número válido de variables.")
     
     def crear_campos_restricciones(self):
         """Genera dinámicamente los campos de las restricciones y coeficientes de la función objetivo"""
@@ -151,54 +140,67 @@ class SimplexApp:
             m = int(self.entry_vars["m"].get())
             n = int(self.entry_vars["n"].get())
 
-            # Menú desplegable para seleccionar Maximizar o Minimizar
-            tk.Label(self.constraints_frame, text="Tipo de optimización:", font=("Arial", 12), bg="#f0f0f0").grid(row=0, column=0, sticky="e", padx=10)
+            # Menú desplegable para seleccionar Maximizar o Minimizar, colocado en el centro
+            tk.Label(self.constraints_frame, text="Tipo de optimización:", font=("Arial", 12), bg="#f0f0f0").grid(row=0, column=0, sticky="e", padx=5)
             opt_menu = tk.OptionMenu(self.constraints_frame, self.opt_type, "Maximizar", "Minimizar")
             opt_menu.config(font=("Arial", 12))
-            opt_menu.grid(row=0, column=1, padx=10, pady=1)
+            opt_menu.grid(row=0, column=1, columnspan=n, padx=5, pady=1, sticky="ew")  # Ajuste del menú al centro
 
             # Crear campos para los coeficientes de la función objetivo
-            tk.Label(self.constraints_frame, text="Función Objetivo:", font=("Arial", 12), bg="#f0f0f0").grid(row=1, column=0, sticky="e", padx=10)
+            tk.Label(self.constraints_frame, text="Función Objetivo:", font=("Arial", 12), bg="#f0f0f0").grid(row=1, column=0, sticky="e", padx=5)
             self.coef_widgets = []
             for j in range(n):
                 coef_var = tk.StringVar()
                 self.entry_vars["c"].append(coef_var)
+                # Colocar la etiqueta "Xj" después de cada entrada
                 entry = tk.Entry(self.constraints_frame, textvariable=coef_var, font=("Arial", 12), width=5)
-                entry.grid(row=1, column=j + 1, padx=5)
+                entry.grid(row=1, column=j * 2 + 1, padx=(2 if j > 0 else 2), pady=2)  # Espaciado uniforme
                 self.coef_widgets.append(entry)
+                tk.Label(self.constraints_frame, text=f"X{j+1}", font=("Arial", 8), bg="#f0f0f0").grid(row=1, column=j * 2 + 2, padx=2)  # Luego la etiqueta
 
             for i in range(m):
                 restriccion_var_b = tk.StringVar()
                 self.restricciones_entries.append({"b": restriccion_var_b, "A": []})
 
                 # Crear campos para los coeficientes de la restricción
-                tk.Label(self.constraints_frame, text=f"Restricción {i+1}:", font=("Arial", 12), bg="#f0f0f0").grid(row=i + 2, column=0, sticky="e", padx=10, pady=1)
+                tk.Label(self.constraints_frame, text=f"Restricción {i+1}:", font=("Arial", 12), bg="#f0f0f0").grid(row=i + 2, column=0, sticky="e", padx=5, pady=1)
 
                 for j in range(n):
                     coef_var = tk.StringVar()
                     self.restricciones_entries[i]["A"].append(coef_var)
-                    tk.Entry(self.constraints_frame, textvariable=coef_var, font=("Arial", 12), width=5).grid(row=i + 2, column=j + 1, padx=5)
+                    # Colocar la etiqueta "Xj" después de cada entrada
+                    entry = tk.Entry(self.constraints_frame, textvariable=coef_var, font=("Arial", 12), width=5)
+                    entry.grid(row=i + 2, column=j * 2 + 1, padx=(2 if j > 0 else 2), pady=2)  # Espaciado uniforme
+                    tk.Label(self.constraints_frame, text=f"X{j+1}", font=("Arial", 8), bg="#f0f0f0").grid(row=i + 2, column=j * 2 + 2, padx=2)  # Luego la etiqueta
 
-                # Crear una variable para almacenar el valor seleccionado
+                # Menú desplegable para operadores (≤, ≥, =)
                 operator_var = tk.StringVar(self.constraints_frame)
-                operator_var.set("≤")  # Default value
-                operator_menu = tk.OptionMenu(self.constraints_frame, operator_var, "≤", "≥", "=")
+                method = self.method.get()
+
+                if method == "Simplex":
+                    operator_var.set("≤")  # Valor por defecto
+                    operator_menu = tk.OptionMenu(self.constraints_frame, operator_var, "≤", "≥")
+                elif method == "Big M" or method == "Two Phase":
+                    operator_var.set("≤")  # Valor por defecto
+                    operator_menu = tk.OptionMenu(self.constraints_frame, operator_var, "≤", "≥", "=")
+
                 operator_menu.config(font=("Arial", 12), bg="#f0f0f0")
-                operator_menu.grid(row=i + 2, column=n + 1, sticky="e", padx=10)
+                operator_menu.grid(row=i + 2, column=n * 2 + 1, sticky="e", padx=10)
                 self.operators.append(operator_var)
 
-                tk.Entry(self.constraints_frame, textvariable=restriccion_var_b, font=("Arial", 12), width=10).grid(row=i + 2, column=n + 2, padx=10)
+                # Campo para el término independiente de la restricción
+                tk.Entry(self.constraints_frame, textvariable=restriccion_var_b, font=("Arial", 12), width=10).grid(row=i + 2, column=n * 2 + 2, padx=10)
 
             # Añadir la condición de no negatividad
-            tk.Label(self.constraints_frame, text="X1, X2 ≥ 0", font=("Arial", 12), bg="#f0f0f0").grid(row=m + 2, column=0, columnspan=n + 3, sticky="w", padx=10, pady=10)
+            tk.Label(self.constraints_frame, text="X1, X2, Xk ≥ 0", font=("Arial", 12), bg="#f0f0f0").grid(row=m + 2, column=0, columnspan=n + 3, sticky="w", padx=10, pady=10)
 
             # Botón para regresar a la vista anterior (create_widgets)
             tk.Button(self.constraints_frame, text="Regresar", command=self.create_widgets, font=("Arial", 12), bg="#767676", fg="white", width=20).grid(row=m + 3, column=0, columnspan=3, pady=10)
 
         except ValueError:
-            self.show_error("Por favor ingrese valores válidos.")
-            # messagebox.showerror("Error", "Por favor ingrese valores válidos.")
+            messagebox.showerror("Error", "Por favor ingrese valores válidos.")
             self.create_widgets()
+
 
     def display_results(result):
         print("Resultados de la optimización:")
@@ -227,9 +229,7 @@ class SimplexApp:
                 return
 
             A = [list(map(float, (entry["A"][j].get() for j in range(n)))) for entry in self.restricciones_entries]
-            b = [float(entry["b"].get().replace(" ","")) for entry in self.restricciones_entries]
-            o = [self.operators[i].get().replace('≤', '<=').replace('≥', '>=') for i in range(m)]
-
+            b = [float(entry["b"].get()) for entry in self.restricciones_entries]
 
             if len(A) != m or any(len(row) != n for row in A):
                 messagebox.showerror("Error", f"Se esperaban {m} restricciones, cada una con {n} coeficientes.")
@@ -246,7 +246,7 @@ class SimplexApp:
                 solver.simplex(self.text_widget)
             elif method == "Big M":
                 self.text_widget.insert(tk.END, "Resolviendo con Método M...\n")
-                
+                o = [self.operators[i].get().replace('≤', '<=').replace('≥', '>=') for i in range(m)]
                 solver = BigMSolver(n, m, c, A, o, b)
                 solver.solve(self.text_widget)
             elif method == "Two Phase":
@@ -284,22 +284,12 @@ class SimplexApp:
                 self.text_widget.insert(tk.END, "El problema no tiene solución factible.\n")
 
         except ValueError as ve:
-            self.show_error(f"Por favor ingrese valores válidos: {ve}")
-            # messagebox.showerror("Error", f"Por favor ingrese valores válidos: {ve}")
+            messagebox.showerror("Error", f"Por favor ingrese valores válidos: {ve}")
         except Exception as e:
-            self.show_error(f"Ha ocurrido un error: {e}")
-            # messagebox.showerror("Error", f"Ha ocurrido un error: {e}")
+            messagebox.showerror("Error", f"Ha ocurrido un error: {e}")
 
 # Ejecutar la aplicación de Tkinter
 if __name__ == "__main__":
     root = tk.Tk()
     app = SimplexApp(root)
     root.mainloop()
-
-
-#     Tableau - Iteration 0:
-# x1	x2	s1	s2	a1	RHS
-# -3.00	-5.00	0.00	0.00	-1000.00	5000.00
-# 1.00	1.00	1.00	0.00	0.00	4.00
-# 2.00	1.00	0.00	1.00	0.00	12.00
-# 3.00	2.00	0.00	0.00	1.00	18.00

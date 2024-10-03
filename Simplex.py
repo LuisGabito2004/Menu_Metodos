@@ -62,14 +62,31 @@ class SimplexSolver:
 
         valor_optimo = tabla[-1][-1]
 
+        # Mostrar la solución
         text_widget.insert(tk.END, "Solución óptima:\n")
         for i in range(n):
             text_widget.insert(tk.END, f"x{i+1} = {solucion[i]:.4f}\n")
         text_widget.insert(tk.END, f"Valor óptimo de la función objetivo: {valor_optimo:.4f}\n")
+
+        # Mostrar la función objetivo en formato estándar
+        text_widget.insert(tk.END, "Función objetivo en formato estándar:\n")
+        funcion_objetivo = "Z = "
+        for i in range(n):
+            funcion_objetivo += f"{c[i]:.2f}*x{i+1} "
+            if i < n - 1:
+                funcion_objetivo += "+ "
+        for i in range(m):
+            valor_slack = tabla[-1][n + i]
+            if valor_slack != 0:
+                signo = "+ " if valor_slack > 0 else "- "
+                funcion_objetivo += f"{signo}{abs(valor_slack):.2f}*s{i+1} "
+        funcion_objetivo += f"= {valor_optimo:.2f}\n"
+        text_widget.insert(tk.END, funcion_objetivo)
 
     def imprimir_tabla(self, tabla, text_widget, iteracion):
         text_widget.insert(tk.END, f"Tabla Simplex - Iteración {iteracion}:\n")
         for fila in tabla:
             text_widget.insert(tk.END, "\t".join(map("{:.2f}".format, fila)) + "\n")
         text_widget.insert(tk.END, "\n")
+
 

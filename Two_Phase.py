@@ -42,8 +42,10 @@ class LP_model_solver(object):
             elif self.operators[i].get() == "=":
                 if i < len(self.A):
                     # Add the equality constraint without slack or surplus
-                    print("EQUAL OPERATOR")
-                    new_A.append(np.concatenate([self.A[i], np.zeros(self.const_num)]))
+                    surplus_col = np.zeros(self.const_num)
+                    surplus_col[i] = 0.0  # Surplus variable (negative coefficient)
+                    new_A.append(np.concatenate([self.A[i], surplus_col]))
+                    new_C.append(0.0)  # No cost associated with surplus variable
                 else:
                     print(f"Error: Trying to access index {i} in A which has length {len(self.A)}")
 
