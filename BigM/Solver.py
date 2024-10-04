@@ -1,5 +1,7 @@
 from typing import List, Tuple
 from sys import exit
+#from PolynomialAddition import big_m_addition
+#from Coefficient import BigMCoefficient
 from BigM.PolynomialAddition import big_m_addition
 from BigM.Coefficient import BigMCoefficient
 import numpy as np
@@ -27,67 +29,58 @@ class BigMSolver:
         self.res_restr = res_constr
         self.is_min = is_min
 
+        print("===============================")
         coef_str, constr_str = self.generate_str()
+        print(coef_str, constr_str)
         new_coef, new_constrs = self.canonical2standard(coef_str, constr_str)
+        print(new_coef, new_constrs)
         result = big_m_addition(new_coef, new_constrs)
-        print(result)
-        self.coef_objective, self.coef_restr, self.res_restr = self.parse_problem(result, new_constrs)
-        print(self.coef_objective, self.coef_restr, self.res_restr)
+        print("PolynomialAdditionL: ", result)
+        self.coef_objective, self.coef_restr = self.parse_problem(result, new_constrs)
+        print("Objetive: ", self.coef_objective)
+        print("Constriants: ", self.coef_restr)
+        print("ResultConstraints: ", self.res_restr)
+        print("===============================")
 
         self.M = 1000  # A large number to represent M
         self.slack_vars = sum(1 for op in op_constr if op in ['<=', '>='])
-        self.artificial_vars = sum(1 for op in op_constr if op in ['='])
-        self.total_vars = num_var + self.slack_vars + self.artificial_vars
+        self.artificial_vars = sum(1 for op in op_constr if op in ['=', '>='])
         
         self.tableau = self.create_initial_tableau()
 
-    def format_tableau_for_display(self, tableau):
-        formatted_tableau = np.zeros_like(tableau, dtype=object)
-        
-        for i in range(tableau.shape[0]):
-            for j in range(tableau.shape[1]):
-                value = tableau[i, j]
-                if abs(value) >= self.M:
-                    m_coeff = math.floor(value / self.M) if value >= 0 else math.ceil(value / self.M)
-                    const_part = value - (m_coeff * self.M)
-
-                    if const_part == 0:
-                        formatted_tableau[i, j] = f"{m_coeff}M"
-                    else:
-                        sign = "+" if const_part > 0 else "-"
-                        formatted_tableau[i, j] = f"{m_coeff}M{sign}{abs(const_part)}"
-                else:
-                    formatted_tableau[i, j] = f"{value:.2f}"
-
-        return formatted_tableau
-
     def create_initial_tableau(self):
         rows = self.num_restr + 1
-        cols = self.total_vars + 1  # +1 for RHS
+        cols = len(self.coef_objective)
         tableau = [[BigMCoefficient(0, 0) for _ in range(cols)] for _ in range(rows)]
     
+        # Set constraint coefficients
         for i in range(self.num_restr):
             for j in range(len(self.coef_restr[i])):
-                tableau[i][j] = BigMCoefficient(0, self.coef_restr[i][j])
+                tableau[i][j] = self.parse_coefficient(self.coef_restr[i][j])
+            # Set the RHS of constraints
             tableau[i][-1] = BigMCoefficient(0, self.res_restr[i])
     
         # Set objective function coefficients
-        for j in range(len(self.coef_objective) - 1):  # Exclude the last element (RHS)
-            tableau[-1][j] = self.parse_coefficient(self.coef_objective[j])
+        for j in range(len(self.coef_objective)):
+            coef = self.parse_coefficient(self.coef_objective[j])
+            if self.is_min:
+                tableau[-1][j] = -coef  # Negate coefficients for minimization
+            else:
+                tableau[-1][j] = coef
     
         # Set the RHS of the objective row
         tableau[-1][-1] = self.parse_coefficient(self.coef_objective[-1])
     
         return tableau
-
+    
     def parse_coefficient(self, coef_str: str) -> BigMCoefficient:
         return BigMCoefficient.from_string(coef_str)
 
     def solve(self, text_widget):
         iteration = 0
         while True:
-            self._print_tableau_DEBUG(text_widget, iteration)
             self.print_tableau(text_widget, iteration)
+            self._print_tableau_DEBUG(text_widget, iteration)
     
             # Find the pivot column
             pivot_col = min(range(len(self.tableau[0]) - 1), key=lambda j: float(self.tableau[-1][j]))
@@ -98,15 +91,16 @@ class BigMSolver:
             ratios = []
             for i in range(len(self.tableau) - 1):
                 if float(self.tableau[i][pivot_col]) <= 0:
-                    ratios.append(float('inf'))
+                    ratios.append(BigMCoefficient(float('inf'), float('inf')))
                 else:
-                    ratios.append(float(self.tableau[i][-1] / self.tableau[i][pivot_col]))
+                    ratios.append(self.tableau[i][-1] / self.tableau[i][pivot_col])
     
-            if all(math.isinf(ratio) for ratio in ratios):
+            if all(ratio.is_infinite() for ratio in ratios):
+                print("The problem is unbounded.\n")
                 text_widget.insert(tk.END, "The problem is unbounded.\n")
                 return None, None
     
-            pivot_row = min(range(len(ratios)), key=lambda i: ratios[i])
+            pivot_row = min(range(len(ratios)), key=lambda i: float(ratios[i]))
     
             # Perform pivot operation
             pivot_element = self.tableau[pivot_row][pivot_col]
@@ -119,8 +113,8 @@ class BigMSolver:
             iteration += 1
     
         # Print final tableau
-        self._print_tableau_DEBUG(text_widget, iteration, is_final=True)
         self.print_tableau(text_widget, iteration, is_final=True)
+        self._print_tableau_DEBUG(text_widget, iteration, is_final=True)
     
         # Extract and return the solution
         solution = [0] * self.num_var
@@ -156,100 +150,78 @@ class BigMSolver:
             print("\t".join(str(coeff) for coeff in row) + "\n")
 
     def generate_str(self) -> Tuple[str, List[str]]:
-        objective = "Z=" if not self.is_min else "Z = -("
-        for i in range(self.num_var):
-            coef = self.coef_objective[i]
-            if coef >= 0 and i != 0:
-                objective += f"+ {coef}X{i+1} "
-            else:
-                objective += f" {coef}X{i+1} "
-        if self.is_min:
+        if not self.is_min:
+            objective = "Z = "
+            for i in range(self.num_var):
+                coef = self.coef_objective[i]
+                if float(coef) >= 0 and i != 0:
+                    objective += f"+ {coef}X{i+1} "
+                else:
+                    objective += f"{coef}X{i+1} "
+        else:
+            objective = "Z = -("
+            for i in range(self.num_var):
+                coef = self.coef_objective[i]
+                if float(coef) >= 0 and i != 0:
+                    objective += f"+ {coef}X{i+1} "
+                else:
+                    objective += f"{coef}X{i+1} "
             objective += ")"
-
+    
         constraints = []
         for i in range(self.num_restr):
             constraint = ""
             for j in range(self.num_var):
                 coef = self.coef_restr[i][j]
-                if coef >= 0 and j != 0:
+                if float(coef) >= 0 and j != 0:
                     constraint += f"+ {coef}X{j+1} "
                 else:
                     constraint += f"{coef}X{j+1} "
             # Append the right-hand side
             constraint += f"{self.op_constr[i]} {self.res_restr[i]}"
             constraints.append(constraint)
-
+    
         return objective, constraints
 
-    def transform_big_m_objective(self, expression: str) -> List[str]:
-        # Step 1: Separate the X terms
-        terms = re.findall(r'([+-]?\s*\d*\.?\d*M?X?\d*)', expression)
-        grouped_terms = {}
-        term_order = []
-        
-        for term in terms:
-            if 'X' in term:
-                x_num = re.search(r'X(\d*)', term).group(1)
-                x_num = x_num if x_num else '1'
-                if x_num not in grouped_terms:
-                    grouped_terms[x_num] = []
-                    term_order.append(x_num)
-                grouped_terms[x_num].append(term.strip())
-            elif 'M' in term and 'X' not in term:
-                if 'M' not in grouped_terms:
-                    grouped_terms['M'] = []
-                    term_order.append('M')
-                grouped_terms['M'].append(term.strip())
-        
-        # Step 2: Eliminate similar X and join terms
-        result_step2 = []
-        for key in term_order:
-            group = grouped_terms[key]
-            if group:
-                m_sum = sum(float(re.search(r'([+-]?\s*\d*\.?\d*)M', term.replace(" ","")).group(1) or '1') for term in group if 'M' in term)
-                non_m_sum = sum(float(re.search(r'([+-]?\s*\d*\.?\d*)', term.replace(" ","")).group(1) or '1') for term in group if 'M' not in term)
-                
-                if 'X' in group[0]:
-                    result = f"{m_sum}M{'+' if non_m_sum >= 0 else ''}{non_m_sum}"
-                else:
-                    result = f"{m_sum}M"
-                
-                result_step2.append(result)
-        
-        return result_step2
-
     def canonical2standard(self, coef: str, constrs: List[str]) -> Tuple[str, List[str]]:
-        # Process constraints
         new_constrs = []
         added_vars = []
-        for i, constr in enumerate(constrs):
+        s_count = 0  # Counter for slack and surplus variables
+        ms_count = 0  # Counter for artificial variables
+    
+        for constr in constrs:
+            s_count += 1
             if '>=' in constr:
-                new_constr = constr.replace('>=', f'- S{i+1} = ')
+                # For >= constraints, subtract a surplus variable and add an artificial variable
+                ms_count += 1
+                tmp = f'- S{s_count} + MS{ms_count} = '
+                new_constr = constr.replace('>=', tmp)
+                added_vars.append(f'MS{ms_count}')
             elif '<=' in constr:
-                new_constr = constr.replace('<=', f'+ S{i+1} = ')
+                # For <= constraints, add a slack variable
+                new_constr = constr.replace('<=', f'+ S{s_count} = ')
             elif '=' in constr:
-                new_constr = constr.replace('=', f'+ MS{i+1} = ')
-                added_vars.append(f'MS{i+1}')
+                # For equality constraints, add an artificial variable
+                ms_count += 1
+                new_constr = constr.replace('=', f'+ MS{ms_count} = ')
+                added_vars.append(f'MS{ms_count}')
             else:
                 new_constr = constr  # No change if no recognized operator
             new_constrs.append(new_constr)
-        
+    
         # Process objective function
+        if self.is_min:
+            coef = coef.replace("Z = -(", "Z = ").replace(")", "")
         if added_vars:
-            # Split the objective function into left and right parts
-            left, right = coef.split('=')
-            # Add negative M variables
-            right += ' '.join(f'- {var}' for var in added_vars)
-            new_coef = f"{left.strip()} = {right.strip()}"
-        else:
-            new_coef = coef
-        
-        return new_coef, new_constrs
-                
+            # Add negative M variables (use a large M value, e.g., 1000)
+            coef += ' - ' + ' - '.join(added_vars)
+    
+        return coef, new_constrs
+
     def parse_problem(self, objective: str, constraints: List[str]) -> Tuple[List[str], List[List[float]], List[float]]:
         def parse_terms(expression):
             return re.findall(r'([+-]?\s*\d*\.?\d*)\s*(MX\d+|X\d+|MS\d+|S\d+|M)', expression)
-
+    
         def parse_coef(coef):
             coef = coef.strip().replace(' ', '')
             if coef in ('+', '-'):
@@ -258,6 +230,12 @@ class BigMSolver:
                 return 1.0
             else:
                 return float(coef)
+    
+        def eliminate_empty_cols(matrix):
+            transposed = list(map(list, zip(*matrix)))
+            filtered = [row for row in transposed if any(value not in {0, None, '0'} for value in row)]
+            result = list(map(list, zip(*filtered)))
+            return result
 
         # Parse objective function
         obj_match = re.match(r'Z\s*=\s*(.*)', objective)
@@ -267,55 +245,65 @@ class BigMSolver:
                 objective = f"Z = {obj_match.group(1)}{obj_match.group(2)}"
             else:
                 raise ValueError("Invalid objective function format")
-
+    
         obj_terms = parse_terms(objective)
-
+    
         # Collect all variables from objective and constraints
         all_variables = []
         for _, var in obj_terms:
-            if var not in all_variables and var not in ['M', 'MX1', 'MX2']:
+            if var not in all_variables and var not in ['M', 'MX']:
                 all_variables.append(var)
         for constraint in constraints:
             constr_terms = parse_terms(constraint.split('=')[0])
             for _, var in constr_terms:
-                if var not in all_variables:
+                if var not in all_variables and var != 'M':
                     all_variables.append(var)
-
+    
         num_var = len(all_variables)
         var_to_index = {x: i for i, x in enumerate(all_variables)}
-
+    
         # Parse objective function
-        coefs_objective = [0.0] * num_var
-        m_coef = 0.0
+        coefs_objective = ['0.0'] * num_var
         for coef, var in obj_terms:
-            coef = parse_coef(coef)
             if var == 'M':
-                m_coef = coef
-            elif var.startswith('MX'):
-                x_var = 'X' + var[2:]
-                if x_var in var_to_index:
-                    coefs_objective[var_to_index[x_var]] -= coef * m_coef
+                coefs_objective.append(coef + 'M')
+            elif var.startswith('MX') or var.startswith('MS'):
+                index = var_to_index.get(var[1:], len(coefs_objective))
+                if index == len(coefs_objective):
+                    coefs_objective.append(coef + var)
+                else:
+                    if '0.0' in coefs_objective[index]:
+                        coefs_objective[index] = coef + var
+                    else:
+                        coefs_objective[index] += coef + var
             elif var in var_to_index:
-                coefs_objective[var_to_index[var]] += coef
-
+                if '0.0' in coefs_objective[var_to_index[var]]:
+                    coefs_objective[var_to_index[var]] = coef + var
+                else:
+                    coefs_objective[var_to_index[var]] += coef + var
+            else:
+                coefs_objective[var_to_index[var]] = '0'
+        coefs_objective = [v if not '0.0' in v else '0' for v in coefs_objective ]
+    
         # Parse constraints
-        coefs_constr = []
-        res_constr = []
-        
+        coefs_constr = [coefs_objective]  # Add objective function as the first row
+    
         for constraint in constraints:
             left, right = constraint.split('=')
             constr_terms = parse_terms(left)
-            constr_coefs = [0.0] * num_var
+            constr_coefs = ['0'] * len(coefs_objective)
             
             for coef, var in constr_terms:
-                coef = parse_coef(coef)
                 if var in var_to_index:
-                    constr_coefs[var_to_index[var]] += coef
-        
+                    constr_coefs[var_to_index[var]] = coef.replace(" ", "") + var.replace(" ", "")
+            
+                
+            constr_coefs[-1] = right.strip()
             coefs_constr.append(constr_coefs)
-            res_constr.append(float(right.strip()))
-        
-        return self.transform_big_m_objective(objective), coefs_constr, res_constr
+            
+            matrix = eliminate_empty_cols(coefs_constr)
+    
+        return matrix[0], matrix[1::]
 
 # PARSED
 # [4.0, 2.0]
@@ -331,19 +319,18 @@ class BigMSolver:
 if __name__ == "__main__":
     var_num = 2
     constr_num = 3
-    coef = [3.0, 5.0]
-    constr = [[1.0, 0.0], [0.0, 2.0], [3.0, 2.0]]
-    op_constr = ['<=', '<=', '=']
-    res_constr = [4.0, 12.0, 18.0]
-    obj = BigMSolver(var_num, constr_num, coef, constr, op_constr, res_constr)
+
+    coef = [0.4, 0.5]
+    constr = [[0.3, 0.1], [0.5, 0.5], [0.6, 0.4]]
+    op_constr = ['<=', '=', '>=']
+    res_constr = [2.7, 6.0, 6.0]
+
+    #coef = [3.0, 5.0]
+    #constr = [[1.0, 0.0], [0.0, 2.0], [3.0, 2.0]]
+    #op_constr = ['<=', '<=', '=']
+    #res_constr = [4.0, 12.0, 18.0]
+
+    obj = BigMSolver(var_num, constr_num, coef, constr, op_constr, res_constr, True)
 
     obj.solve(None)
-
-# ['-3.0M-3.0', '-2.0M-5.0', '-18.0M']
-# [[1.0, 0.0, 1.0, 0.0, 0.0], [0.0, 2.0, 0.0, 1.0, 0.0], [3.0, 2.0, 0.0, 0.0, 1.0]]
-# [4.0, 12.0, 18.0]
-
-
-
-
 

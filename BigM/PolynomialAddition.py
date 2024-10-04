@@ -2,8 +2,14 @@ from typing import List, Tuple
 import re
 
 def big_m_addition(objective: str, constraints: List[str]) -> str:
+    print('+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-')
+    print(objective)
+    print(constraints)
+    print('+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-')
+
     # Parse the objective function
     obj_terms = parse_equation(standardize_objective_function(objective))
+
     # Parse and negate the constraint equations
     neg_constraints = [negate_equation(parse_equation(eq)) for eq in constraints]
     
@@ -115,7 +121,15 @@ def consolidate_terms(terms: List[Tuple[float, str]]) -> List[Tuple[float, str]]
 def format_equation(terms: List[Tuple[float, str]]) -> str:
     formatted = []
 
-    for coef, var in sorted(terms, key=lambda x: (x[1] != 'Z', '=' in x[1], x[1])):
+    print("######### ", terms)
+    for coef, var in sorted(terms, key=lambda x: (
+        #x[1] != 'Z', '=' in x[1], x[1]
+        0 if x[1] == 'Z' else
+        1 if x[1].startswith('MX') else
+        2 if x[1].startswith('X') else
+        3 if x[1].startswith('MS') else
+        4 if '=' in x[1] else 5
+    )):
         formatted.append('=') if '=' in var else var
         var = var.replace("=", "") if '=' in var else var
 
@@ -130,6 +144,7 @@ def format_equation(terms: List[Tuple[float, str]]) -> str:
         else:
             term = f"{coef}{var}"
         formatted.append(term)
+    print("######### ", formatted)
     
     result = " ".join(formatted).strip("+")
     return result if result else "0"
