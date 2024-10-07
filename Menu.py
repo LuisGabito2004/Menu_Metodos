@@ -141,13 +141,13 @@ class SimplexApp:
             n = int(self.entry_vars["n"].get())
 
             # Menú desplegable para seleccionar Maximizar o Minimizar, colocado en el centro
-            tk.Label(self.constraints_frame, text="Tipo de optimización:", font=("Arial", 12), bg="#f0f0f0").grid(row=0, column=0, sticky="e", padx=5)
+            tk.Label(self.constraints_frame, text="Tipo de optimización:", font=("Arial", 12), bg="#f0f0f0").grid(row=0, column=0, sticky="e", padx=10)
             opt_menu = tk.OptionMenu(self.constraints_frame, self.opt_type, "Maximizar", "Minimizar")
             opt_menu.config(font=("Arial", 12))
             opt_menu.grid(row=0, column=1, columnspan=n, padx=5, pady=1, sticky="ew")  # Ajuste del menú al centro
 
             # Crear campos para los coeficientes de la función objetivo
-            tk.Label(self.constraints_frame, text="Función Objetivo:", font=("Arial", 12), bg="#f0f0f0").grid(row=1, column=0, sticky="e", padx=5)
+            tk.Label(self.constraints_frame, text="Función Objetivo:", font=("Arial", 12), bg="#f0f0f0").grid(row=1, column=0, sticky="e", padx=10)
             self.coef_widgets = []
             for j in range(n):
                 coef_var = tk.StringVar()
@@ -163,7 +163,7 @@ class SimplexApp:
                 self.restricciones_entries.append({"b": restriccion_var_b, "A": []})
 
                 # Crear campos para los coeficientes de la restricción
-                tk.Label(self.constraints_frame, text=f"Restricción {i+1}:", font=("Arial", 12), bg="#f0f0f0").grid(row=i + 2, column=0, sticky="e", padx=5, pady=1)
+                tk.Label(self.constraints_frame, text=f"Restricción {i+1}:", font=("Arial", 12), bg="#f0f0f0").grid(row=i + 2, column=0, sticky="e", padx=10, pady=1)
 
                 for j in range(n):
                     coef_var = tk.StringVar()
@@ -177,6 +177,12 @@ class SimplexApp:
                 operator_var = tk.StringVar(self.constraints_frame)
                 method = self.method.get()
 
+                # Obtener el método seleccionado
+                method = self.method.get()
+
+                # Crear una variable para almacenar el valor seleccionado del operador
+                operator_var = tk.StringVar(self.constraints_frame)
+
                 if method == "Simplex":
                     operator_var.set("≤")  # Valor por defecto
                     operator_menu = tk.OptionMenu(self.constraints_frame, operator_var, "≤", "≥")
@@ -184,6 +190,7 @@ class SimplexApp:
                     operator_var.set("≤")  # Valor por defecto
                     operator_menu = tk.OptionMenu(self.constraints_frame, operator_var, "≤", "≥", "=")
 
+                # Configurar y colocar el menú de selección del operador
                 operator_menu.config(font=("Arial", 12), bg="#f0f0f0")
                 operator_menu.grid(row=i + 2, column=n * 2 + 1, sticky="e", padx=10)
                 self.operators.append(operator_var)
@@ -200,7 +207,6 @@ class SimplexApp:
         except ValueError:
             messagebox.showerror("Error", "Por favor ingrese valores válidos.")
             self.create_widgets()
-
 
     def display_results(result):
         print("Resultados de la optimización:")
@@ -257,6 +263,8 @@ class SimplexApp:
                 else:
                     is_min = True
                 
+                if is_min == True:
+                    is_min = self.opt_type.get() == "Minimizar"
                 # Crear los nombres de las variables según el número de variables
                 vars_name = [f"x{i+1}" for i in range(n)]
                 
@@ -293,4 +301,3 @@ if __name__ == "__main__":
     root = tk.Tk()
     app = SimplexApp(root)
     root.mainloop()
-

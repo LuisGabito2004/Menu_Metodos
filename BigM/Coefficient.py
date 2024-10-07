@@ -30,6 +30,10 @@ class BigMCoefficient:
             )
         return BigMCoefficient(self.m_coeff * float(other), self.const_coeff * float(other), self.variable)
 
+    def __rmul__(self, other):
+        # This method is called when BigMCoefficient is on the right side of *
+        return self.__mul__(other)
+
     def __truediv__(self, other):
         if isinstance(other, BigMCoefficient):
             if other.m_coeff == 0 and other.const_coeff == 0:
@@ -70,9 +74,11 @@ class BigMCoefficient:
         return float(self) >= float(other)
 
     def __str__(self):
-        if self.m_coeff == 0:
+        if abs(self.m_coeff) < 1e-10 and abs(self.const_coeff) < 1e-10:
+            return "0.00"
+        elif abs(self.m_coeff) < 1e-10:
             return f"{self.const_coeff:.2f}"
-        elif self.const_coeff == 0:
+        elif abs(self.const_coeff) < 1e-10:
             return f"{self.m_coeff:.2f}M"
         else:
             sign = "+" if self.const_coeff > 0 else "-"
@@ -83,31 +89,91 @@ class BigMCoefficient:
         if isinstance(coef_str, (int, float)):
             return cls(0, float(coef_str))
 
-        # New regex pattern to match complex coefficients
-        pattern = r'([-+]?\s*\d*\.?\d*)\s*(M)?\s*(X\d+|S\d+|MS\d+)?(?:([-+]\s*\d*\.?\d*)\s*(X\d+|S\d+|MS\d+)?)?'
-        match = re.match(pattern, coef_str.strip())
+        if coef_str.strip() == '':
+            return cls(0, 0)
 
-        if not match:
-            raise ValueError(f"Invalid coefficient format: {coef_str}")
+        pattern = r'([-+]?\s*\d*\.?\d*)\s*(M)?\s*(X\d+|S\d+|A\d+|MS\d+|MA\d+)?(?:([-+]\s*\d*\.?\d*)\s*(M)?\s*(X\d+|S\d+|A\d+|MS\d+|MA\d+)?)?'
+        matches = re.findall(pattern, coef_str.strip())
 
-        m_coef, m_part, var1, const_coef, var2 = match.groups()
+        m_coeff = 0
+        const_coeff = 0
+        variable = None
 
-        # Handle the M coefficient part
-        if m_coef in ('', '+', '-'):
-            m_coef = '1' if m_coef in ('', '+') else '-1'
-        m_coeff = float(m_coef) if m_part else 0
+        for match in matches:
+            coef, m_part, var1, const_part, const_m_part, var2 = match
 
-        # Handle the constant coefficient part
-        if const_coef is None:
-            const_coeff = float(m_coef) if not m_part else 0
-        else:
-            if const_coef in ('', '+', '-'):
-                const_coef = '1' if const_coef in ('', '+') else '-1'
-            const_coeff = float(const_coef)
+            coef = coef.strip()
+            if coef == '+':
+                coef = '1'
+            elif coef == '-':
+                coef = '-1'
+            elif coef == '':
+                coef = '1' if m_part else '0'  # Treat bare 'M' as '1M'
+            
+            if m_part:
+                m_coeff += float(coef)
+            else:
+                const_coeff += float(coef)
 
-        # Determine the variable
-        variable = var1 or var2
+            if const_part:
+                const_part = const_part.strip()
+                if const_part == '+':
+                    const_part = '1'
+                elif const_part == '-':
+                    const_part = '-1'
+                elif const_part == '':
+                    const_part = '1' if const_m_part else '0'  # Treat bare 'M' as '1M'
+                
+                if const_m_part:
+                    m_coeff += float(const_part)
+                else:
+                    const_coeff += float(const_part)
+
+            variable = var1 or var2 or variable
 
         return cls(m_coeff, const_coeff, variable)
 
-
+    # @classmethod
+    # def from_string(cls, coef_str):
+    #     if isinstance(coef_str, (int, float)):
+    #         return cls(0, float(coef_str))
+    #
+    #     if coef_str.strip() == '0' or coef_str.strip() == '':
+    #         return cls(0, 0)
+    #
+    #     pattern = r'([-+]?\s*\d*\.?\d*)\s*(M)?\s*(X\d+|S\d+|A\d+|MS\d+|MA\d+)?(?:([-+]\s*\d*\.?\d*)\s*(M)?\s*(X\d+|S\d+|A\d+|MS\d+|MA\d+)?)?'
+    #     matches = re.findall(pattern, coef_str.strip())
+    #
+    #     m_coeff = 0
+    #     const_coeff = 0
+    #     variable = None
+    #
+    #     for match in matches:
+    #         coef, m_part, var1, const_part, const_m_part, var2 = match
+    #
+    #         coef = coef.replace(" ", "")
+    #         if coef in ('', '+'):
+    #             coef = '0'
+    #         elif coef == '-':
+    #             coef = '0'
+    #        
+    #         if m_part:
+    #             m_coeff += float(coef)
+    #         else:
+    #             const_coeff += float(coef)
+    #
+    #         if const_part:
+    #             const_part = const_part.replace(" ", "")
+    #             if const_part in ('', '+'):
+    #                 const_part = '0'
+    #             elif const_part == '-':
+    #                 const_part = '0'
+    #            
+    #             if const_m_part:
+    #                 m_coeff += float(const_part)
+    #             else:
+    #                 const_coeff += float(const_part)
+    #
+    #         variable = var1 or var2 or variable
+    #
+    #     return cls(m_coeff, const_coeff, variable)

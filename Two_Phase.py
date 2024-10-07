@@ -9,7 +9,8 @@ class LP_model_solver(object):
         self.A = np.array(A).astype(np.float64)
         self.RHS = np.array(RHS).astype(np.float64)
         self.slack_vars = np.array(slack_vars).astype(np.float64)
-        self.is_min = is_min
+        self.original_is_min = is_min  # Guardamos la orientación original del problema
+        self.is_min = True  # Siempre trabajamos con minimización internamente
         self._equal_threshold = 1e-6
         self.text_widget = widget
         self.operators = operators
@@ -59,7 +60,8 @@ class LP_model_solver(object):
         self.var_num = self.C.size + self.slack_vars.size  # total number of variables
         self.const_num = self.RHS.size # total number of constraints
         # update the cost coefficients
-        if not self.is_min:
+        # Convertimos el problema original a un problema de minimización
+        if not self.original_is_min:
             self.C = self.C * (-1.0)
         new_C = list(self.C)
         for _ in range(self.slack_vars.size):
@@ -95,8 +97,15 @@ class LP_model_solver(object):
     def _simplex_tableau(self, text_widget):  # Pass in the text widget
         assert self.const_num == len(self.basis)
         iteration = 0
+        
         while any(self.tableau[-1][self.non_basis] > (0 + self._equal_threshold)):
             reduced_cost = self.tableau[-1][self.non_basis]
+            
+            # Usar la regla de Bland para seleccionar la variable entrante
+            positive_indices = [i for i in range(len(reduced_cost)) if reduced_cost[i] > self._equal_threshold]
+            if not positive_indices:
+                break  # No hay costos reducidos positivos, salir del bucle
+            
             enter_axis_idx = np.argmax(reduced_cost)
             enter_axis = self.non_basis[enter_axis_idx]
             y_k = self.tableau[:-1, enter_axis]
@@ -106,17 +115,30 @@ class LP_model_solver(object):
                 text_widget.insert(tk.END, "Solution is unbounded\n")
                 return {'Type': 'unbounded', 'Recession Cone': rc}
             
+            # Usar la regla de Bland para seleccionar la variable saliente
+            leave_candidates = [
+                (i, self.tableau[i, -1] / y_k[i])
+                for i in range(len(y_k))
+                if y_k[i] > self._equal_threshold
+            ]
+        
+            if not leave_candidates:
+                break  # No hay candidatos para salir, salir del bucle
+            
             leave_axis_idx = self._lexicographic_rule(y_k)
             self._update_tableau(enter_axis_idx, leave_axis_idx)  # Perform pivot
             
+            # Mostrar tabla con encabezados ordenados
+            self._display_tableau(text_widget, iteration)
+
             cur_sol, cur_obj = self._get_result()
             
             # Display each iteration in the Text widget
-            self.text_widget.insert(tk.END, f"\n=== Iteration #{iteration} ===\n")
-            self.text_widget.insert(tk.END, f"Entering variable: x{enter_axis + 1}\n")
-            self.text_widget.insert(tk.END, f"Leaving variable: x{self.basis[leave_axis_idx] + 1}\n")
-            self.text_widget.insert(tk.END, f"Current objective value: {cur_obj:.4f}\n")
-            self.text_widget.insert(tk.END, "Current basic solution:\n")
+            text_widget.insert(tk.END, f"\n=== Iteration #{iteration} ===\n")
+            text_widget.insert(tk.END, f"Entering variable: x{enter_axis + 1}\n")
+            text_widget.insert(tk.END, f"Leaving variable: x{self.basis[leave_axis_idx] + 1}\n")
+            text_widget.insert(tk.END, f"Current objective value: {cur_obj:.4f}\n")
+            text_widget.insert(tk.END, "Current basic solution:\n")
             for var, value in cur_sol.items():
                 self.text_widget.insert(tk.END, f"x{var + 1}: {value:.4f}\n")
             
@@ -128,9 +150,47 @@ class LP_model_solver(object):
         text_widget.insert(tk.END, "Optimal solution (variable: value):\n")
         for var, value in optimal_solution.items():
             text_widget.insert(tk.END, f"x{var + 1}: {value:.4f}\n")
+        
+        print(self.tableau)
 
         return {'Type': 'optimal', 'Optimal Solution': optimal_solution, 'Optimal Objective': optimal_obj}
 
+
+    def _validate_and_correct_z_row(self):
+        """ Verifica y corrige si hay valores negativos en la fila Z que deberían ser positivos """
+        for i in range(len(self.tableau[-1])):
+            if self.tableau[-1][i] < -self._equal_threshold:
+                # Corrige el valor para que sea positivo o igual a cero
+                self.tableau[-1][i] = abs(self.tableau[-1][i])
+    
+    def _display_tableau(self, text_widget, iteration):
+        # Crear etiquetas dinámicas para las variables de decisión y holgura
+        decision_vars = [f"x{i+1}" for i in range(len(self.vars_name))]
+        slack_vars = [f"s{i+1}" for i in range(self.const_num)]
+        all_vars = decision_vars + slack_vars
+        col_labels = all_vars + ["RHS"]
+
+        # Encabezado de las columnas
+        text_widget.insert(tk.END, f"\nTabla de Iteración #{iteration}:\n")
+        text_widget.insert(tk.END, "  ".join(col_labels) + "\n")
+
+        # Mostrar las filas con las variables básicas
+        for row in range(self.const_num):
+        # Variable básica (líder)
+            lead_var = all_vars[self.basis[row]] if self.basis[row] < len(all_vars) else f"s{self.basis[row] - len(all_vars) + 1}"
+            row_values = [f"{v:.2f}" for v in self.tableau[row]]
+            text_widget.insert(tk.END, f"{lead_var}  " + "  ".join(row_values) + "\n")
+
+        # Mostrar la última fila (la fila de z)
+        z_values = [f"{v:.2f}" for v in self.tableau[-1]]
+        text_widget.insert(tk.END, f"z   " + "  ".join(z_values) + "\n")
+
+    def _format_value(self, value):
+    # Si el valor es un número entero, muéstralo como entero, de lo contrario, muéstralo con 2 decimales
+        if abs(value - round(value)) < self._equal_threshold:  # Compara el valor con su valor redondeado
+            return f"{int(round(value))}"  # Mostrar como entero
+        else:
+            return f"{value:.2f}"  # Mostrar con 2 decimales
 
     def _get_result(self):
         current_solution = {}
@@ -138,7 +198,8 @@ class LP_model_solver(object):
             current_solution[self.basis[row]] = self.tableau[row][-1]
         current_solution = dict(sorted(current_solution.items(), key=lambda x: x[0]))
         current_obj = self.tableau[-1][-1]
-        if not self.is_min:
+        # Invertimos el signo del objetivo si el problema original era de maximización
+        if not self.original_is_min:
             current_obj *= -1.0
 
         return current_solution, current_obj
@@ -299,11 +360,14 @@ class LP_model_solver(object):
             phase_2_result = self._simplex_tableau(self.text_widget)
 
             if phase_2_result['Type'] == 'optimal':
-                print("Optimo") 
+                optimal_obj = phase_2_result['Optimal Objective']
+                if not self.original_is_min:
+                    optimal_obj *= -1.0  # Invertimos el signo si el problema original era de maximización
+                
                 return {
                     'Type': 'optimal',
                     'Optimal Solution': {self.vars_name[v]: phase_2_result['Optimal Solution'][v] if v in phase_2_result['Optimal Solution'] else 0.0 for v in range(len(self.vars_name))},
-                    'Optimal Objective': phase_2_result['Optimal Objective']
+                    'Optimal Objective': optimal_obj
                 }
             else:
                 print("Unbounded")
